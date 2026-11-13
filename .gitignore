@@ -1,0 +1,23 @@
+
+# .NET build files
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+# React / Node.js
+node_modules/
+dist/
+
+# Visual Studio Code
+.vscode/
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# Operating System
+.DS_Store
+Thumbs.db
