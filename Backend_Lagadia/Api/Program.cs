@@ -1,59 +1,117 @@
+
+using Api.Common.Extensions;
+using Api.Features.Registrations;
+
 using Application.Abstractions.Data;
 using Application.Abstractions.Messaging;
+
+using Application.Features.Registrations;
+using Application.Features.Registrations.CreateRegistration;
+using Application.Features.Registrations.GetRegistrations;
+using Application.Features.Registrations.GetRegistrationById;
+using Application.Features.Registrations.GetRegistrationSummary;
+
 using Domain.Common;
 using FluentValidation;
 using Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Database
+// Database - SQLite
 builder.Services.AddDbContext<IAppDbContext, AppDbContext>(options =>
-    options.UseInMemoryDatabase("VerticalSliceDb"));
+    options.UseSqlite(
+        "Data Source=carshow.db",
+        b => b.MigrationsAssembly("Infrastructure")));
 
 // Validators
-builder.Services.AddValidatorsFromAssembly(typeof(IAppDbContext).Assembly);
+builder.Services.AddValidatorsFromAssembly(
+    typeof(CreateRegistrationValidator).Assembly);
 
-// Handlers
-// builder.Services.AddScoped<ICommandHandler<TCommand, Result<TResponse>>, TCommandHandler>();
-// builder.Services.AddScoped<IQueryHandler<TQuery, Result<TResponse>>, TQueryHandler>();
+// Registration Number Generator
+builder.Services.AddScoped<RegistrationNumberGenerator>();
 
-// API
+// Command Handlers
+builder.Services.AddScoped<
+    ICommandHandler<CreateRegistrationCommand, Result<CreateRegistrationResponse>>,
+    CreateRegistrationHandler>();
+
+// Query Handlers
+builder.Services.AddScoped<
+    IQueryHandler<GetRegistrationsQuery, Result<GetRegistrationsResponse>>,
+    GetRegistrationsHandler>();
+
+builder.Services.AddScoped<
+    IQueryHandler<GetRegistrationByIdQuery, Result<GetRegistrationByIdResponse>>,
+    GetRegistrationByIdHandler>();
+
+builder.Services.AddScoped<
+    IQueryHandler<GetRegistrationSummaryQuery, Result<GetRegistrationSummaryResponse>>,
+    GetRegistrationSummaryHandler>();
+
+// CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("ReactFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
+// Enum serialization
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(
+        new JsonStringEnumConverter());
+});
+
+// OpenAPI and Scalar
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, _, _) =>
     {
-        document.Info.Title = "Vertical Slice API Template by Elvin Manuel R. Luces, MIT";
-        document.Info.Description = "A simple API demonstrating Vertical Slice Architecture";
+        document.Info.Title = "Car Show Registration System";
+        document.Info.Description = "Car Show Registration API";
         return Task.CompletedTask;
     });
 });
 
 var app = builder.Build();
 
-// Seed data
-using (var scope = app.Services.CreateScope())
+// Database Migration and Seed Data
+using (var scope = app.Services.CreateAsyncScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var dbContext = scope.ServiceProvider
+        .GetRequiredService<AppDbContext>();
 
-    // dbContext.<Entities>.AddRange(...);
+    await dbContext.Database.MigrateAsync();
 
-    dbContext.SaveChanges();
+    await RegistrationSeeder.SeedAsync(dbContext);
 }
 
-// Configure the HTTP request pipeline
+// Middleware
+app.UseCors("ReactFrontend");
+
+// Scalar
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
 }
 
-// Root endpoint
-app.MapGet("/", () => "Welcome to the Vertical Slice API! Go to /scalar/v1 for API documentation.");
+// Welcome endpoint
+app.MapGet("/", () =>
+    "Welcome to the Car Show Registration API! Go to /scalar/v1 for API documentation.");
 
-// Map endpoints
-// app.Map{FeatureGroup}Endpoints();
+// Registration endpoints
+app.MapRegistrationEndpoints();
 
 app.Run();
+
+
